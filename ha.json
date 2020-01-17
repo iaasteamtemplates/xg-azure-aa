@@ -24,10 +24,11 @@
         },
         "imageSku": {
             "type": "string",
-            "defaultValue": "byol",
+            "defaultValue": "eap",
             "allowedValues": [
                 "byol",
-                "payg-new"
+                "payg-new",
+				"eap"
             ],
             "metadata": {
                 "description": "License type to use."
