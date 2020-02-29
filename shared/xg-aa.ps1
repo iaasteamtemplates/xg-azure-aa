@@ -9,12 +9,17 @@ Param
   [Parameter (Mandatory= $true)]
   [String] $hostname,
   [Parameter (Mandatory= $true)]
+  [String] $xgaliasip,
+  [Parameter (Mandatory= $true)]  
   [String] $sshport
 )
 $secpassword = ConvertTo-SecureString $password -AsPlainText -Force
 $creds = New-Object System.Management.Automation.PSCredential ("admin", $secpassword)
 $session = New-SSHSession -ComputerName $hostname -Credential $creds -AcceptKey -Port $sshport
 $SSHStream = New-SSHShellStream -SessionId $session.SessionId
+$aliasipblock = @"
+opcode add_alias -s nosync -t json -b '{ "___serverport":4444,"___serverprotocol":"HTTP","ipfamily":"0","interfaceip": "$xgaliasip","interface":"PortB","Event":"ADD","Entity": "alias","netmask":"255.255.255.255"}'
+"@
 If ($session.Connected) {
     Start-Sleep -s 10
 	$SSHStream.WriteLine("a")
@@ -26,6 +31,8 @@ If ($session.Connected) {
     Start-Sleep -s 5
     $SSHStream.WriteLine("3")
     Start-Sleep -s 5
+    $SSHStream.WriteLine("$aliasipblock")
+    Start-Sleep -s 5	
     $SSHStream.WriteLine("telnet localhost zebra")
     Start-Sleep -s 5
     $SSHStream.WriteLine("enable")

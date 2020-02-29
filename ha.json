@@ -4,7 +4,7 @@
     "parameters": {
         "baseUrl": {
             "type": "string",
-            "defaultValue": "https://raw.githubusercontent.com/iaasteamtemplates/xg-azure-aa/master/",
+            "defaultValue": "https://raw.githubusercontent.com/iaasteamtemplates/xg-azure-aa/Dedicated-IP/",
             "metadata": {
                 "artifactsBaseUrl": "Base URL of the template package"
             }
@@ -100,7 +100,14 @@
                 "description": "Prefix for the LAN side Subnet. Note that each node only requires a single address, so it's recommended to limit subnet size to /24 or smaller."
             }
         },
-		"LoadbalancerIntIP": {
+		"LoadbalancerIntName": {
+            "type": "string",
+            "defaultValue": "Loadbalancer",
+            "metadata": {
+                "description": "Name for the internal Load Balancer."
+            }
+        },
+		"LoadbalancerIntIp": {
             "type": "string",
             "defaultValue": "10.0.2.250",
             "metadata": {
@@ -125,17 +132,30 @@
                 "description": "Resource Group of existing Public IP (optional)."
             }
         },
-        "publicIpName": {
+        "LoadbalancerExtName": {
             "type": "string",
             "defaultValue": "PublicIP",
             "metadata": {
-                "description": "Name of the Public IP."
+                "description": "Name for the Public IP on the external load balancer."
             }
         },
-        "publicIpDNS": {
+        "LoadbalancerExtDNS": {
             "type": "string",
             "metadata": {
-                "description": "Unique DNS name prefix for Public IP."
+                "description": "Unique DNS name prefix for the external load balancer."
+            }
+        },
+		"XgAliasIpName": {
+            "type": "string",
+            "defaultValue": "PubAliasIP",
+            "metadata": {
+                "description": "Name prefix for the Public Alias IP of the XG Firewall nodes."
+            }
+        },
+        "XgAliasIpDNS": {
+            "type": "string",
+            "metadata": {
+                "description": "Unique DNS name prefix for the Public Alias IP of the XG Firewall nodes."
             }
         },
         "storageNewOrExisting": {
@@ -261,6 +281,7 @@
     },
     "variables": {
         "publicIpTemplate": "[concat(parameters('baseUrl'),'/shared/publicip-',parameters('publicIpNewOrExisting'),'.json')]",
+		"XgAliasIpTemplate": "[concat(parameters('baseUrl'),'/shared/xgaliasip.json')]",
         "netTemplate": "[concat(parameters('baseUrl'),'/shared/vnet-',parameters('netNewOrExisting'),'.json')]",
         "storageTemplate": "[concat(parameters('baseUrl'),'/shared/storageAccount-',parameters('storageNewOrExisting'),'.json')]",
         "availabilitySetTemplate": "[concat(parameters('baseUrl'),'/shared/availabilitySet-',parameters('availabilitySetNewOrExisting'),'.json')]",
@@ -367,7 +388,7 @@
             }
         },
         {
-            "name": "SettingUpPublicIP",
+            "name": "SettingUpLBExtPublicIP",
             "type": "Microsoft.Resources/deployments",
             "apiVersion": "[variables('apiVersion').resources.deployments]",
             "properties": {
@@ -378,10 +399,10 @@
                 },
                 "parameters": {
                     "publicIPAddressName": {
-                        "value": "[parameters('publicIpName')]"
+                        "value": "[parameters('LoadbalancerExtName')]"
                     },
                     "dnsPrefix": {
-                        "value": "[parameters('publicIpDNS')]"
+                        "value": "[parameters('LoadbalancerExtDNS')]"
                     },
                     "publicIpRGName": {
                         "value": "[parameters('publicIpRG')]"
@@ -425,11 +446,11 @@
             }
         },
         {
-            "name": "SettingUpLoadbalancer",
+            "name": "SettingUpLoadbalancerExt",
             "type": "Microsoft.Resources/deployments",
             "apiVersion": "[variables('apiVersion').resources.deployments]",
             "dependsOn": [
-                "[concat('Microsoft.Resources/deployments/', 'SettingUpPublicIP')]"
+                "[concat('Microsoft.Resources/deployments/', 'SettingUpLBExtPublicIP')]"
             ],
             "properties": {
                 "mode": "Incremental",
@@ -439,13 +460,40 @@
                 },
                 "parameters": {
                     "publicIpId": {
-                        "value": "[reference('SettingUpPublicIP').outputs.publicIpId.value]"
+                        "value": "[reference('SettingUpLBExtPublicIP').outputs.publicIpId.value]"
                     },
                     "loadBalancerName": {
                         "value": "Loadbalancer"
                     },
                     "numberOfInstances": {
                         "value": "[parameters('numberOfInstances')]"
+                    }
+                }
+            }
+        },
+		{
+            "name": "[concat('SettingUpXGAliasIP', copyIndex())]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "[variables('apiVersion').resources.deployments]",
+            "copy": {
+                "name": "XgAliasIpLoop",
+                "count": "[parameters('numberOfInstances')]"
+            },
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('XgAliasIpTemplate')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "XgAliasIPName": {
+                        "value": "[concat(parameters('XgAliasIpName'),'-', copyIndex())]"
+                    },
+                    "XgAliasIpDns": {
+                        "value": "[concat(parameters('XgAliasIpDNS'),'-', copyIndex())]"
+                    },
+                    "publicIpRGName": {
+                        "value": "[parameters('publicIpRG')]"
                     }
                 }
             }
@@ -461,6 +509,7 @@
             "dependsOn": [
                 "[concat('Microsoft.Resources/deployments/', 'SettingUpLoadbalancer')]",
                 "[concat('Microsoft.Resources/deployments/', 'SettingUpVirtualNetwork')]",
+				"[concat('Microsoft.Resources/deployments/', 'SettingUpXGAliasIP', copyIndex())]",
                 "[concat('Microsoft.Resources/deployments/', 'SettingUpNetworkSecurityGroup')]"
             ],
             "properties": {
@@ -485,6 +534,9 @@
                     "inboundNatSshID": {
                         "value": "[concat(reference('SettingUpLoadbalancer').outputs.inboundNatSshIDPrefix.value, copyIndex())]"
                     },
+					"XgAliasIpId": {
+                        "value": "[reference(concat('SettingUpXGAliasIP', copyIndex()),'2017-08-01').outputs.XgAliasIpId.value]"
+                    },
                     "networkSecurityGroupId": {
                         "value": "[reference('SettingUpNetworkSecurityGroup','2015-01-01').outputs.networkSecurityGroupName.value]"
                     }
@@ -492,7 +544,7 @@
             }
         },
         {
-            "name": "SettingUpIntLoadbalancer",
+            "name": "SettingUpLoadbalancerInt",
             "type": "Microsoft.Resources/deployments",
             "apiVersion": "[variables('apiVersion').resources.deployments]",
             "properties": {
@@ -509,7 +561,7 @@
                         "value": "[parameters('LoadbalancerIntIP')]"
                     },
 					"loadBalancerName": {
-                        "value": "InternalLoadbalancer"
+                        "value": "[parameters('LoadbalancerIntName')]"
                     },
                     "numberOfInstances": {
                         "value": "[parameters('numberOfInstances')]"
@@ -542,7 +594,7 @@
                         "value": "[reference('SettingUpVirtualNetwork','2015-01-01').outputs.subnet2Ref.value]"
                     },
 					"lbBackendID": {
-                        "value": "[reference('SettingUpIntLoadbalancer').outputs.lbBackendID.value]"
+                        "value": "[reference('SettingUpLoadbalancerInt').outputs.lbBackendID.value]"
                     }
                 }
             }
@@ -636,14 +688,15 @@
 					"portagw": "[concat(variables('lanNetwork'),'1')]",
 					"portbgw": "[concat(variables('wanNetwork'),'1')]",
                     "hostname": "[reference('SettingUpPublicIP').outputs.fqdn.value]",
+					"xgaliasip": "[reference(concat('SettingUpInterfaceWan', copyIndex()),'2015-01-01').outputs.XgAliasIp.value]",
 					"sshport": "[copyIndex(2222)]"
 				}
 			}
 		}
     ],
     "outputs": {
-        "fqdn": {
-            "value": "[reference('SettingUpPublicIP').outputs.fqdn.value]",
+        "LoadbalancerExtfqdn": {
+            "value": "[reference('SettingUpLBExtPublicIP').outputs.fqdn.value]",
             "type": "string"
         }
     }

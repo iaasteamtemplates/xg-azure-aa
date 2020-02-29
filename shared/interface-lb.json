@@ -17,6 +17,9 @@
         "inboundNatSshID": {
             "type": "string"
         },
+		"XgAliasIpId": {
+            "type": "string"
+        },
         "networkSecurityGroupId": {
             "type": "string"
         }
@@ -33,9 +36,10 @@
                 },
                 "ipConfigurations": [
                     {
-                        "name": "ipconfig",
+                        "name": "ipconfig1",
                         "properties": {
                             "privateIPAllocationMethod": "Dynamic",
+							"primary": true,
                             "subnet": {
                                 "id": "[parameters('subnetRef')]"
                             },
@@ -54,6 +58,18 @@
                             ]
                         }
                     }
+					{
+                        "name": "ipconfig2",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "publicIPAddress": {
+                                "id": "[parameters('XgAliasIpId')]"
+                            },
+                            "subnet": {
+                                "id": "[parameters('subnetRef')]"
+                            }
+                        }
+                    }
                 ],
                 "enableIPForwarding": true
             }
@@ -62,6 +78,11 @@
     "outputs": {
         "interfaceRef": {
             "value": "[resourceId('Microsoft.Network/networkInterfaces',parameters('interfaceName'))]",
+            "type": "string"
+        },
+		,
+        "XgAliasIp": {
+            "value": "[reference(parameters('interfaceName')).ipConfigurations[1].properties.privateIPAddress]",
             "type": "string"
         }
     }
